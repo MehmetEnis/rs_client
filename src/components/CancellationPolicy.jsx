@@ -1,6 +1,5 @@
 /**
  * Renders a cancellation policy array in a human-readable format.
- * Handles both Nuitee-style ({cancelTime, amount}) and plain strings.
  */
 export default function CancellationPolicy({ policy }) {
   if (!policy) return <p className="text-xs text-gray-400">No policy info</p>

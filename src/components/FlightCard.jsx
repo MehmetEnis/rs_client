@@ -1,5 +1,5 @@
 /**
- * Renders a single normalised journey (one direction) from the Duffel offer stream.
+ * Renders a single normalised flight journey (one direction).
  * Shows carrier logo, route, duration, stops, fare family, baggage, price.
  */
 export default function FlightCard({ journey, onSelect }) {

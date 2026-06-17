@@ -42,7 +42,7 @@ export default function FlightBookingModal({ journey, searchForm, onClose }) {
     try {
       const body = {
         outbound_offer_id:          offer.offerId,
-        supplier:                   journey.supplier || 'duffel',
+        supplier:                   journey.supplier,
         origin:                     first?.originCode || searchForm.origin?.iata,
         destination:                last?.destinationCode || searchForm.destination?.iata,
         depart_date:                searchForm.depart_date,

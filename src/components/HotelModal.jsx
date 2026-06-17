@@ -36,7 +36,7 @@ export default function HotelModal({ hotel, searchParams, onClose }) {
         check_out:        searchParams.check_out,
         rooms,
         currency:         searchParams.currency || 'USD',
-        supplier:         searchParams.supplier || 'nuitee',
+        supplier:         searchParams.supplier,
         guest_nationality: searchParams.guest_nationality || 'GB',
         room_type_name:   rate.room_type_name || rate.name || null,
         board_name:       rate.board_name || rate.board || null,
