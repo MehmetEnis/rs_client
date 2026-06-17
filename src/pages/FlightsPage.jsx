@@ -24,14 +24,14 @@ const defaultForm = {
 
 export default function FlightsPage() {
   const [form,        setForm]        = useState(defaultForm)
-  const [offers,      setOffers]      = useState([])
+  const [journeys,    setJourneys]    = useState([])
   const [loading,     setLoading]     = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [cursor,      setCursor]      = useState(null)
   const [error,       setError]       = useState(null)
   const [searched,    setSearched]    = useState(false)
-  const [selectedOut, setSelectedOut] = useState(null)  // chosen outbound offer (round-trip)
-  const [bookingPair, setBookingPair] = useState(null)  // triggers modal: { outbound, inbound? }
+  const [selectedOut, setSelectedOut] = useState(null)  // chosen outbound journey (round-trip)
+  const [bookingPair, setBookingPair] = useState(null)  // { outbound, inbound? } → triggers modal
   const orqRef = useRef(null)
 
   const set   = (field) => (val) => setForm((f) => ({ ...f, [field]: val }))
@@ -40,8 +40,8 @@ export default function FlightsPage() {
   const loadPage = async (orqId, after = null, append = false) => {
     try {
       const res = await flightOffers(orqId, after)
-      const newOffers = res.data.data || []
-      setOffers((prev) => append ? [...prev, ...newOffers] : newOffers)
+      const newJourneys = res.data.data || []
+      setJourneys((prev) => append ? [...prev, ...newJourneys] : newJourneys)
       setCursor(res.data.next_cursor || null)
     } catch (err) {
       setError(err.response?.data?.error || err.message)
@@ -56,15 +56,15 @@ export default function FlightsPage() {
     }
     setLoading(true)
     setError(null)
-    setOffers([])
+    setJourneys([])
     setCursor(null)
     setSearched(false)
     setSelectedOut(null)
 
     try {
       const params = {
-        origin:      form.origin.iata_code,
-        destination: form.destination.iata_code,
+        origin:      form.origin.iata,
+        destination: form.destination.iata,
         depart_date: form.depart_date,
         adults:      form.adults,
         children:    form.children || 0,
@@ -95,29 +95,33 @@ export default function FlightsPage() {
   }
 
   const isRT = form.trip_type === 'return'
-  const outOffers = isRT ? offers.filter((o) => o.direction === 'OUTBOUND') : offers
-  const inOffers  = isRT ? offers.filter((o) => o.direction === 'INBOUND')  : []
+  const outJourneys = isRT
+    ? journeys.filter((j) => j.legDirection === 'OUTBOUND')
+    : journeys
+  const inJourneys  = isRT
+    ? journeys.filter((j) => j.legDirection === 'INBOUND')
+    : []
 
-  const handleSelectOffer = (offer) => {
+  const handleSelect = (journey) => {
     setError(null)
     if (!isRT) {
-      setBookingPair({ outbound: offer })
+      setBookingPair({ outbound: journey })
       return
     }
-    if (offer.direction === 'OUTBOUND') {
-      setSelectedOut(offer)
+    if (journey.legDirection === 'OUTBOUND') {
+      setSelectedOut(journey)
     } else {
       if (!selectedOut) {
         setError('Please select an outbound flight first.')
         return
       }
-      setBookingPair({ outbound: selectedOut, inbound: offer })
+      setBookingPair({ outbound: selectedOut, inbound: journey })
     }
   }
 
-  const totalFound = isRT
-    ? `${outOffers.length} outbound, ${inOffers.length} return`
-    : `${offers.length} flight${offers.length !== 1 ? 's' : ''}`
+  const totalLabel = isRT
+    ? `${outJourneys.length} outbound, ${inJourneys.length} return`
+    : `${journeys.length} flight${journeys.length !== 1 ? 's' : ''}`
 
   return (
     <div>
@@ -232,14 +236,14 @@ export default function FlightsPage() {
         <>
           <div className="flex items-center justify-between mb-4">
             <p className="text-sm text-gray-600">
-              {offers.length > 0 ? totalFound : 'No flights found — try different dates or airports.'}
+              {journeys.length > 0 ? totalLabel : 'No flights found — try different dates or airports.'}
             </p>
           </div>
 
           {/* Round-trip: two sections */}
           {isRT && (
             <>
-              {outOffers.length > 0 && (
+              {outJourneys.length > 0 && (
                 <div className="mb-8">
                   <div className="flex items-center gap-3 mb-3">
                     <h3 className="font-semibold text-gray-800">Outbound Flights</h3>
@@ -248,28 +252,25 @@ export default function FlightsPage() {
                       : <span className="text-xs text-gray-400">Pick your outbound flight</span>
                     }
                     {selectedOut && (
-                      <button
-                        className="text-xs text-brand-600 underline ml-auto"
-                        onClick={() => setSelectedOut(null)}
-                      >
+                      <button className="text-xs text-brand-600 underline ml-auto" onClick={() => setSelectedOut(null)}>
                         Change
                       </button>
                     )}
                   </div>
                   <div className="space-y-3">
-                    {outOffers.map((offer, idx) => (
+                    {outJourneys.map((j, idx) => (
                       <FlightCard
-                        key={offer.offer_id || idx}
-                        offer={offer}
-                        selected={selectedOut?.offer_id === offer.offer_id}
-                        onSelect={() => handleSelectOffer(offer)}
+                        key={j.journeyKey || idx}
+                        journey={j}
+                        selected={selectedOut?.journeyKey === j.journeyKey}
+                        onSelect={() => handleSelect(j)}
                       />
                     ))}
                   </div>
                 </div>
               )}
 
-              {inOffers.length > 0 && (
+              {inJourneys.length > 0 && (
                 <div className="mb-6">
                   <div className="flex items-center gap-3 mb-3">
                     <h3 className="font-semibold text-gray-800">Return Flights</h3>
@@ -278,12 +279,12 @@ export default function FlightsPage() {
                     )}
                   </div>
                   <div className={`space-y-3 ${!selectedOut ? 'opacity-50 pointer-events-none' : ''}`}>
-                    {inOffers.map((offer, idx) => (
+                    {inJourneys.map((j, idx) => (
                       <FlightCard
-                        key={offer.offer_id || idx}
-                        offer={offer}
+                        key={j.journeyKey || idx}
+                        journey={j}
                         selected={false}
-                        onSelect={() => handleSelectOffer(offer)}
+                        onSelect={() => handleSelect(j)}
                       />
                     ))}
                   </div>
@@ -295,11 +296,11 @@ export default function FlightsPage() {
           {/* One-way: flat list */}
           {!isRT && (
             <div className="space-y-3">
-              {offers.map((offer, idx) => (
+              {journeys.map((j, idx) => (
                 <FlightCard
-                  key={offer.offer_id || idx}
-                  offer={offer}
-                  onSelect={() => handleSelectOffer(offer)}
+                  key={j.journeyKey || idx}
+                  journey={j}
+                  onSelect={() => handleSelect(j)}
                 />
               ))}
             </div>
@@ -307,11 +308,7 @@ export default function FlightsPage() {
 
           {cursor && (
             <div className="text-center mt-6">
-              <button
-                className="btn-secondary"
-                disabled={loadingMore}
-                onClick={loadMore}
-              >
+              <button className="btn-secondary" disabled={loadingMore} onClick={loadMore}>
                 {loadingMore ? <span className="flex items-center gap-2"><Spinner /> Loading…</span> : 'Load more flights'}
               </button>
             </div>
@@ -322,8 +319,8 @@ export default function FlightsPage() {
       {/* Booking modal */}
       {bookingPair && (
         <FlightBookingModal
-          outboundOffer={bookingPair.outbound}
-          returnOffer={bookingPair.inbound || null}
+          outboundJourney={bookingPair.outbound}
+          returnJourney={bookingPair.inbound || null}
           searchForm={form}
           onClose={() => setBookingPair(null)}
         />

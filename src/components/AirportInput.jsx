@@ -36,7 +36,7 @@ export default function AirportInput({ label, value, onChange, placeholder = 'Ci
   }
 
   const select = (s) => {
-    setQuery(`${s.iata_code} — ${s.city || s.name}`)
+    setQuery(`${s.iata} — ${s.city || s.name}`)
     onChange(s)
     setOpen(false)
     setSuggestions([])
@@ -68,7 +68,7 @@ export default function AirportInput({ label, value, onChange, placeholder = 'Ci
               className="flex items-center gap-3 px-3 py-2.5 hover:bg-brand-50 cursor-pointer text-sm"
               onMouseDown={() => select(s)}
             >
-              <span className="font-mono font-bold text-brand-600 w-8 shrink-0">{s.iata_code}</span>
+              <span className="font-mono font-bold text-brand-600 w-8 shrink-0">{s.iata}</span>
               <span className="text-gray-800">{s.city || s.name}</span>
               <span className="text-gray-400 text-xs ml-auto">{s.country}</span>
             </li>

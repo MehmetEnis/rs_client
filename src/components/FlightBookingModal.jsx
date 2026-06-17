@@ -14,7 +14,7 @@ const makeContact = () => ({
   contact_email: '', contact_phone: '', contact_phone_country_code: '+44',
 })
 
-export default function FlightBookingModal({ outboundOffer, returnOffer, searchForm, onClose }) {
+export default function FlightBookingModal({ outboundJourney, returnJourney, searchForm, onClose }) {
   const [step,        setStep]        = useState(STEPS.DETAIL)
   const [passengers,  setPassengers]  = useState(() => buildInitialPassengers(searchForm))
   const [contact,     setContact]     = useState(makeContact)
@@ -23,38 +23,44 @@ export default function FlightBookingModal({ outboundOffer, returnOffer, searchF
   const [loading,     setLoading]     = useState(false)
   const [error,       setError]       = useState(null)
 
+  const outOffer = outboundJourney.offers?.[0]
+  const retOffer = returnJourney?.offers?.[0]
+
+  const outSegs = outboundJourney.segments || []
+  const outFirst = outSegs[0]
+  const outLast  = outSegs[outSegs.length - 1]
+
   const setP = (idx, field) => (e) =>
     setPassengers((ps) => ps.map((p, i) => i === idx ? { ...p, [field]: e.target.value } : p))
 
   const setC = (field) => (e) =>
     setContact((c) => ({ ...c, [field]: e.target.value }))
 
-  const fmt = (dt) => dt ? new Date(dt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '—'
-  const fmtDate = (dt) => dt ? new Date(dt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) : '—'
-  const fmtDuration = (mins) => {
-    if (!mins) return ''
-    const h = Math.floor(mins / 60)
-    const m = mins % 60
-    return m > 0 ? `${h}h ${m}m` : `${h}h`
-  }
+  const fmt = (dt) => dt
+    ? new Date(dt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+    : '—'
+  const fmtDate = (dt) => dt
+    ? new Date(dt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+    : '—'
 
-  // ── Step 1 → 2: Prebook ────────────────────────────────
+  // ── Prebook ────────────────────────────────────────────
   const handlePrebook = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
     try {
       const body = {
-        outbound_offer_id:          outboundOffer.offer_id,
-        ...(returnOffer ? { return_offer_id: returnOffer.offer_id } : {}),
-        origin:                     outboundOffer.origin,
-        destination:                outboundOffer.destination,
+        outbound_offer_id:          outOffer?.offerId,
+        ...(retOffer ? { return_offer_id: retOffer.offerId } : {}),
+        supplier:                   outboundJourney.supplier,
+        origin:                     outFirst?.originCode || searchForm.origin?.iata,
+        destination:                outLast?.destinationCode || searchForm.destination?.iata,
         depart_date:                searchForm.depart_date,
-        ...(returnOffer ? { return_date: searchForm.return_date } : {}),
+        ...(returnJourney ? { return_date: searchForm.return_date } : {}),
         adults:                     Number(searchForm.adults) || 1,
         children:                   Number(searchForm.children) || 0,
         infants:                    Number(searchForm.infants) || 0,
-        currency:                   outboundOffer.currency || 'GBP',
+        currency:                   outboundJourney.currency || 'GBP',
         contact_first_name:         contact.contact_first_name,
         contact_last_name:          contact.contact_last_name,
         contact_email:              contact.contact_email || undefined,
@@ -85,7 +91,7 @@ export default function FlightBookingModal({ outboundOffer, returnOffer, searchF
     }
   }
 
-  // ── Step 3: Confirm booking ────────────────────────────
+  // ── Confirm ────────────────────────────────────────────
   const handleBook = async () => {
     setLoading(true)
     setError(null)
@@ -114,7 +120,7 @@ export default function FlightBookingModal({ outboundOffer, returnOffer, searchF
     }
   }
 
-  const isRT = !!returnOffer
+  const isRT = !!returnJourney
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 overflow-y-auto">
@@ -128,24 +134,21 @@ export default function FlightBookingModal({ outboundOffer, returnOffer, searchF
             </svg>
           </button>
           <div className="flex items-center gap-3 text-lg font-bold">
-            <span className="font-mono">{outboundOffer.origin}</span>
+            <span className="font-mono">{outFirst?.originCode}</span>
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3"/>
             </svg>
-            <span className="font-mono">{outboundOffer.destination}</span>
-            {isRT && (
-              <>
-                <svg className="w-5 h-5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16l-4-4m0 0l4-4m-4 4h18"/>
-                </svg>
-                <span className="font-mono opacity-60">{returnOffer.origin}</span>
-              </>
-            )}
+            <span className="font-mono">{outLast?.destinationCode}</span>
+            {isRT && <span className="text-sky-200 text-sm font-normal ml-1">(return)</span>}
           </div>
           <p className="text-sky-100 text-sm mt-1">
-            {fmtDate(outboundOffer.departure_time)} · {fmt(outboundOffer.departure_time)} → {fmt(outboundOffer.arrival_time)}
-            {outboundOffer.duration_minutes ? ` · ${fmtDuration(outboundOffer.duration_minutes)}` : ''}
+            {fmtDate(outFirst?.departureTime)} · {fmt(outFirst?.departureTime)} → {fmt(outLast?.arrivalTime)}
           </p>
+          {outboundJourney.cheapestPrice > 0 && (
+            <p className="text-white font-bold text-lg mt-1">
+              {outboundJourney.currency} {Number(outboundJourney.cheapestPrice).toFixed(2)}
+            </p>
+          )}
         </div>
 
         <div className="px-6 py-5">
@@ -159,10 +162,8 @@ export default function FlightBookingModal({ outboundOffer, returnOffer, searchF
           {step === STEPS.DETAIL && (
             <div>
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Flight Details</h3>
-
-              <OfferSegments offer={outboundOffer} label={isRT ? 'Outbound' : null} fmt={fmt} />
-              {isRT && <OfferSegments offer={returnOffer} label="Return" fmt={fmt} />}
-
+              <SegmentList segs={outSegs} label={isRT ? 'Outbound' : null} fmt={fmt} />
+              {isRT && <SegmentList segs={returnJourney.segments || []} label="Return" fmt={fmt} />}
               <button className="btn-primary w-full mt-4" onClick={() => setStep(STEPS.PASSENGERS)}>
                 Continue to Passenger Details →
               </button>
@@ -211,7 +212,7 @@ export default function FlightBookingModal({ outboundOffer, returnOffer, searchF
             </form>
           )}
 
-          {/* ── STEP: Confirm price lock ── */}
+          {/* ── STEP: Confirm ── */}
           {step === STEPS.CONFIRM && prebookData && (
             <div>
               <h3 className="text-sm font-semibold text-gray-700 mb-4">Confirm Booking</h3>
@@ -223,9 +224,9 @@ export default function FlightBookingModal({ outboundOffer, returnOffer, searchF
               )}
 
               <div className="bg-brand-50 rounded-xl p-4 space-y-2 text-sm mb-4">
-                <Row label="Route" value={`${outboundOffer.origin} → ${outboundOffer.destination}${isRT ? ' (return)' : ''}`} />
-                <Row label="Outbound" value={fmtDate(outboundOffer.departure_time)} />
-                {isRT && <Row label="Return" value={fmtDate(returnOffer.departure_time)} />}
+                <Row label="Route" value={`${outFirst?.originCode} → ${outLast?.destinationCode}${isRT ? ' (return)' : ''}`} />
+                <Row label="Outbound" value={fmtDate(outFirst?.departureTime)} />
+                {isRT && <Row label="Return" value={fmtDate(returnJourney.segments?.[0]?.departureTime)} />}
                 <Row label="Passengers" value={passengers.length} />
                 <Row label="Total" value={`${prebookData.currency} ${Number(prebookData.total_amount).toFixed(2)}`} bold />
                 <Row
@@ -267,31 +268,29 @@ export default function FlightBookingModal({ outboundOffer, returnOffer, searchF
   )
 }
 
-function OfferSegments({ offer, label, fmt }) {
-  const segs = offer.segments || []
+function SegmentList({ segs, label, fmt }) {
+  if (!segs.length) return null
   return (
     <div className="mb-3">
       {label && <p className="text-xs font-semibold text-brand-600 uppercase tracking-wide mb-2">{label}</p>}
       <div className="space-y-2">
-        {segs.length > 0 ? segs.map((seg, i) => (
+        {segs.map((seg, i) => (
           <div key={i} className="flex items-center gap-3 bg-gray-50 rounded-lg p-3 text-sm">
             <div className="text-center w-14">
-              <p className="font-bold text-gray-900">{fmt(seg.departure_time)}</p>
-              <p className="font-mono text-xs text-gray-500">{seg.origin}</p>
+              <p className="font-bold text-gray-900">{fmt(seg.departureTime)}</p>
+              <p className="font-mono text-xs text-gray-500">{seg.originCode}</p>
             </div>
             <div className="flex-1 text-center">
-              <p className="text-xs text-gray-400">{seg.carrier} {seg.flight_number}</p>
+              <p className="text-xs text-gray-400">
+                {seg.carrier?.marketingCode}{seg.flight?.marketingNumber}
+              </p>
             </div>
             <div className="text-center w-14">
-              <p className="font-bold text-gray-900">{fmt(seg.arrival_time)}</p>
-              <p className="font-mono text-xs text-gray-500">{seg.destination}</p>
+              <p className="font-bold text-gray-900">{fmt(seg.arrivalTime)}</p>
+              <p className="font-mono text-xs text-gray-500">{seg.destinationCode}</p>
             </div>
           </div>
-        )) : (
-          <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600">
-            {offer.carrier} {offer.flight_number} · {fmt(offer.departure_time)} → {fmt(offer.arrival_time)}
-          </div>
-        )}
+        ))}
       </div>
     </div>
   )
