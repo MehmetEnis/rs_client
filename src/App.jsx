@@ -2,6 +2,8 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import Navbar from './components/Navbar'
 import SearchPage from './pages/SearchPage'
 import BookingsPage from './pages/BookingsPage'
+import FlightsPage from './pages/FlightsPage'
+import FlightBookingsPage from './pages/FlightBookingsPage'
 import SettingsPage from './pages/SettingsPage'
 
 export default function App() {
@@ -12,6 +14,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<SearchPage />} />
           <Route path="/bookings" element={<BookingsPage />} />
+          <Route path="/flights" element={<FlightsPage />} />
+          <Route path="/flights/bookings" element={<FlightBookingsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

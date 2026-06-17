@@ -39,3 +39,23 @@ export const getBooking = (ref) => api().get(`/bookings/${ref}`)
 
 export const cancelBooking = (ref, reason) =>
   api().delete(`/bookings/${ref}`, { data: { reason } })
+
+// ── Flights ──────────────────────────────────────────────
+export const flightSuggestions = (q) =>
+  api().get('/flights/suggestions', { params: { q } })
+
+export const flightSearch = (params) =>
+  api().get('/flights/search', { params })
+
+export const flightOffers = (offerRequestId, after) =>
+  api().get('/flights/offers', {
+    params: { offer_request_id: offerRequestId, ...(after ? { after } : {}) },
+  })
+
+export const flightPrebook = (body) => api().post('/flights/prebook', body)
+
+export const flightBook = (body) => api().post('/flights', body)
+
+export const listFlightBookings = () => api().get('/flights/bookings')
+
+export const getFlightBooking = (ref) => api().get(`/flights/bookings/${ref}`)
