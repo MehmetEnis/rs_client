@@ -1,4 +1,4 @@
-export default function FlightCard({ journey, onSelect, selected = false }) {
+export default function FlightCard({ journey, onSelect, selected = false, selectLabel = 'Select' }) {
   const segs     = journey.segments || []
   const offer    = journey.offers?.[0]
   const price    = journey.cheapestPrice
@@ -25,15 +25,31 @@ export default function FlightCard({ journey, onSelect, selected = false }) {
   const rawDuration = journey.totalDuration?.iso8601 ?? journey.totalDuration
   const duration    = typeof rawDuration === 'string' ? parseDuration(rawDuration) : ''
 
+  // Normalise fare info — handles both Duffel (structured) and Nuitee (raw) offer shapes
+  const fareFamily = offer.fare?.family
+    || offer.offerName
+    || offer.fareName
+    || offer.fareFamily
+    || null
+
   const baggage    = offer.baggage?.included || []
   const checkedBag = baggage.find(b => b.bagType === 'checked')
+    || (offer.checkedBaggages?.some(b => (b.quantity ?? b.pieces ?? 0) > 0)
+        ? { quantity: offer.checkedBaggages.find(b => (b.quantity ?? b.pieces ?? 0) > 0)?.quantity ?? 1 }
+        : null)
   const carryOn    = baggage.find(b => b.bagType === 'carry_on')
+    || (offer.carryOnBag ? { quantity: 1 } : null)
+
+  const refundable = offer.terms?.refundable
+    ?? offer.refundable
+    ?? offer.isRefundable
+    ?? null
 
   return (
     <div
       className={`card p-4 transition-shadow cursor-pointer ${
         selected
-          ? 'border-brand-400 ring-1 ring-brand-400 bg-brand-50'
+          ? 'border-brand-400 ring-2 ring-brand-400 bg-orange-50'
           : 'hover:shadow-md hover:border-brand-300'
       }`}
       onClick={onSelect}
@@ -79,31 +95,40 @@ export default function FlightCard({ journey, onSelect, selected = false }) {
           <p className="text-xs text-gray-400 mt-1">{airline} · {fmtDate(first.departureTime)}</p>
         </div>
 
-        {/* Price */}
-        <div className="text-right shrink-0">
+        {/* Price + Select button */}
+        <div className="text-right shrink-0 flex flex-col items-end gap-2">
           {price > 0 && (
-            <>
+            <div>
               <p className="text-lg font-bold text-gray-900">
                 {currency} {Number(price).toFixed(0)}
               </p>
               <p className="text-xs text-gray-400">per person</p>
-            </>
+            </div>
           )}
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onSelect() }}
+            className={`text-xs px-3 py-1 rounded-full font-medium transition-colors ${
+              selected
+                ? 'bg-brand-500 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-brand-500 hover:text-white'
+            }`}
+          >
+            {selected ? '✓ Selected' : selectLabel}
+          </button>
         </div>
       </div>
 
       {/* Fare tags */}
       <div className="mt-2 flex flex-wrap gap-1.5">
-        {offer.fare?.family && <Tag>{offer.fare.family}</Tag>}
+        {fareFamily && <Tag>{fareFamily}</Tag>}
         {checkedBag
           ? <Tag color="green">✓ {checkedBag.quantity}× checked bag</Tag>
           : <Tag color="gray">No checked bag</Tag>
         }
         {carryOn && <Tag color="green">✓ Carry-on</Tag>}
-        {offer.terms?.refundable
-          ? <Tag color="green">Refundable</Tag>
-          : <Tag color="red">Non-refundable</Tag>
-        }
+        {refundable === true  && <Tag color="green">Refundable</Tag>}
+        {refundable === false && <Tag color="red">Non-refundable</Tag>}
       </div>
     </div>
   )
