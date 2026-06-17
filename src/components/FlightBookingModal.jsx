@@ -14,7 +14,7 @@ const makeContact = () => ({
   contact_email: '', contact_phone: '', contact_phone_country_code: '+44',
 })
 
-export default function FlightBookingModal({ journey, searchForm, onClose }) {
+export default function FlightBookingModal({ outboundOffer, returnOffer, searchForm, onClose }) {
   const [step,        setStep]        = useState(STEPS.DETAIL)
   const [passengers,  setPassengers]  = useState(() => buildInitialPassengers(searchForm))
   const [contact,     setContact]     = useState(makeContact)
@@ -23,34 +23,38 @@ export default function FlightBookingModal({ journey, searchForm, onClose }) {
   const [loading,     setLoading]     = useState(false)
   const [error,       setError]       = useState(null)
 
-  const offer = journey.offers?.[0]
-  const segs  = journey.segments || []
-  const first = segs[0]
-  const last  = segs[segs.length - 1]
-
   const setP = (idx, field) => (e) =>
     setPassengers((ps) => ps.map((p, i) => i === idx ? { ...p, [field]: e.target.value } : p))
 
   const setC = (field) => (e) =>
     setContact((c) => ({ ...c, [field]: e.target.value }))
 
-  // ── Step 1 → 2: Prebook ───────────────────────────────
+  const fmt = (dt) => dt ? new Date(dt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '—'
+  const fmtDate = (dt) => dt ? new Date(dt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) : '—'
+  const fmtDuration = (mins) => {
+    if (!mins) return ''
+    const h = Math.floor(mins / 60)
+    const m = mins % 60
+    return m > 0 ? `${h}h ${m}m` : `${h}h`
+  }
+
+  // ── Step 1 → 2: Prebook ────────────────────────────────
   const handlePrebook = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
     try {
       const body = {
-        outbound_offer_id:          offer.offerId,
-        supplier:                   journey.supplier,
-        origin:                     first?.originCode || searchForm.origin?.iata,
-        destination:                last?.destinationCode || searchForm.destination?.iata,
+        outbound_offer_id:          outboundOffer.offer_id,
+        ...(returnOffer ? { return_offer_id: returnOffer.offer_id } : {}),
+        origin:                     outboundOffer.origin,
+        destination:                outboundOffer.destination,
         depart_date:                searchForm.depart_date,
-        return_date:                searchForm.trip_type === 'return' ? searchForm.return_date : undefined,
+        ...(returnOffer ? { return_date: searchForm.return_date } : {}),
         adults:                     Number(searchForm.adults) || 1,
         children:                   Number(searchForm.children) || 0,
         infants:                    Number(searchForm.infants) || 0,
-        currency:                   journey.currency || 'GBP',
+        currency:                   outboundOffer.currency || 'GBP',
         contact_first_name:         contact.contact_first_name,
         contact_last_name:          contact.contact_last_name,
         contact_email:              contact.contact_email || undefined,
@@ -69,20 +73,19 @@ export default function FlightBookingModal({ journey, searchForm, onClose }) {
           documentExpiry: p.documentExpiry,
         })),
       }
-
       const res = await flightPrebook(body)
       setPrebookData(res.data.data)
       setStep(STEPS.CONFIRM)
     } catch (err) {
-      setError(err.response?.data?.error || err.response?.data?.details
-        ? formatValidationErrors(err.response?.data?.details)
-        : err.message)
+      setError(err.response?.data?.details
+        ? formatValidationErrors(err.response.data.details)
+        : err.response?.data?.error || err.message)
     } finally {
       setLoading(false)
     }
   }
 
-  // ── Step 2: Confirm booking ────────────────────────────
+  // ── Step 3: Confirm booking ────────────────────────────
   const handleBook = async () => {
     setLoading(true)
     setError(null)
@@ -111,8 +114,7 @@ export default function FlightBookingModal({ journey, searchForm, onClose }) {
     }
   }
 
-  const fmt = (dt) => dt ? new Date(dt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '—'
-  const fmtDate = (dt) => dt ? new Date(dt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) : '—'
+  const isRT = !!returnOffer
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 overflow-y-auto">
@@ -126,20 +128,24 @@ export default function FlightBookingModal({ journey, searchForm, onClose }) {
             </svg>
           </button>
           <div className="flex items-center gap-3 text-lg font-bold">
-            <span className="font-mono">{first?.originCode}</span>
+            <span className="font-mono">{outboundOffer.origin}</span>
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3"/>
             </svg>
-            <span className="font-mono">{last?.destinationCode}</span>
+            <span className="font-mono">{outboundOffer.destination}</span>
+            {isRT && (
+              <>
+                <svg className="w-5 h-5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16l-4-4m0 0l4-4m-4 4h18"/>
+                </svg>
+                <span className="font-mono opacity-60">{returnOffer.origin}</span>
+              </>
+            )}
           </div>
           <p className="text-sky-100 text-sm mt-1">
-            {fmtDate(first?.departureTime)} · {fmt(first?.departureTime)} → {fmt(last?.arrivalTime)} · {journey.totalDuration}
+            {fmtDate(outboundOffer.departure_time)} · {fmt(outboundOffer.departure_time)} → {fmt(outboundOffer.arrival_time)}
+            {outboundOffer.duration_minutes ? ` · ${fmtDuration(outboundOffer.duration_minutes)}` : ''}
           </p>
-          {journey.cheapestPrice > 0 && (
-            <p className="text-white font-bold text-lg mt-1">
-              {journey.currency} {Number(journey.cheapestPrice).toFixed(2)}
-            </p>
-          )}
         </div>
 
         <div className="px-6 py-5">
@@ -149,7 +155,21 @@ export default function FlightBookingModal({ journey, searchForm, onClose }) {
             </div>
           )}
 
-          {/* ── STEP 1: Passenger + contact form ── */}
+          {/* ── STEP: Flight details ── */}
+          {step === STEPS.DETAIL && (
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">Flight Details</h3>
+
+              <OfferSegments offer={outboundOffer} label={isRT ? 'Outbound' : null} fmt={fmt} />
+              {isRT && <OfferSegments offer={returnOffer} label="Return" fmt={fmt} />}
+
+              <button className="btn-primary w-full mt-4" onClick={() => setStep(STEPS.PASSENGERS)}>
+                Continue to Passenger Details →
+              </button>
+            </div>
+          )}
+
+          {/* ── STEP: Passenger + contact form ── */}
           {step === STEPS.PASSENGERS && (
             <form onSubmit={handlePrebook}>
               <h3 className="text-sm font-semibold text-gray-700 mb-4">Contact Details</h3>
@@ -168,7 +188,7 @@ export default function FlightBookingModal({ journey, searchForm, onClose }) {
                 </div>
                 <div className="flex gap-2">
                   <div className="w-24">
-                    <label className="label">Country Code</label>
+                    <label className="label">Code</label>
                     <input className="input" required value={contact.contact_phone_country_code} onChange={setC('contact_phone_country_code')} placeholder="+44" />
                   </div>
                   <div className="flex-1">
@@ -191,50 +211,7 @@ export default function FlightBookingModal({ journey, searchForm, onClose }) {
             </form>
           )}
 
-          {/* ── STEP 0: Flight detail ── */}
-          {step === STEPS.DETAIL && (
-            <div>
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Flight Details</h3>
-              <div className="space-y-2 mb-4">
-                {segs.map((seg, i) => (
-                  <div key={i} className="flex items-center gap-3 bg-gray-50 rounded-lg p-3 text-sm">
-                    <div className="text-center w-12">
-                      <p className="font-bold text-gray-900">{fmt(seg.departureTime)}</p>
-                      <p className="font-mono text-xs text-gray-500">{seg.originCode}</p>
-                    </div>
-                    <div className="flex-1 text-center">
-                      <p className="text-xs text-gray-400">{seg.carrier?.marketingCode}{seg.flight?.marketingNumber} · {seg.aircraft || ''}</p>
-                      {i < segs.length - 1 && (
-                        <div className="h-px bg-gray-200 my-1" />
-                      )}
-                    </div>
-                    <div className="text-center w-12">
-                      <p className="font-bold text-gray-900">{fmt(seg.arrivalTime)}</p>
-                      <p className="font-mono text-xs text-gray-500">{seg.destinationCode}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Fare conditions */}
-              {offer?.terms?.summary?.length > 0 && (
-                <div className="mb-4 space-y-1">
-                  {offer.terms.summary.map((s, i) => (
-                    <p key={i} className={`text-xs flex items-center gap-1 ${s.level === 'success' ? 'text-green-700' : s.level === 'error' ? 'text-red-600' : 'text-amber-600'}`}>
-                      <span>{s.level === 'success' ? '✓' : s.level === 'error' ? '✗' : '⚠'}</span>
-                      {s.message}
-                    </p>
-                  ))}
-                </div>
-              )}
-
-              <button className="btn-primary w-full" onClick={() => setStep(STEPS.PASSENGERS)}>
-                Continue to Passenger Details →
-              </button>
-            </div>
-          )}
-
-          {/* ── STEP 2: Confirm price lock ── */}
+          {/* ── STEP: Confirm price lock ── */}
           {step === STEPS.CONFIRM && prebookData && (
             <div>
               <h3 className="text-sm font-semibold text-gray-700 mb-4">Confirm Booking</h3>
@@ -246,8 +223,9 @@ export default function FlightBookingModal({ journey, searchForm, onClose }) {
               )}
 
               <div className="bg-brand-50 rounded-xl p-4 space-y-2 text-sm mb-4">
-                <Row label="Route" value={`${first?.originCode} → ${last?.destinationCode}`} />
-                <Row label="Date" value={fmtDate(first?.departureTime)} />
+                <Row label="Route" value={`${outboundOffer.origin} → ${outboundOffer.destination}${isRT ? ' (return)' : ''}`} />
+                <Row label="Outbound" value={fmtDate(outboundOffer.departure_time)} />
+                {isRT && <Row label="Return" value={fmtDate(returnOffer.departure_time)} />}
                 <Row label="Passengers" value={passengers.length} />
                 <Row label="Total" value={`${prebookData.currency} ${Number(prebookData.total_amount).toFixed(2)}`} bold />
                 <Row
@@ -265,7 +243,7 @@ export default function FlightBookingModal({ journey, searchForm, onClose }) {
             </div>
           )}
 
-          {/* ── STEP 3: Done ── */}
+          {/* ── STEP: Done ── */}
           {step === STEPS.DONE && (
             <div className="text-center py-6">
               <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -289,7 +267,36 @@ export default function FlightBookingModal({ journey, searchForm, onClose }) {
   )
 }
 
-// ── Passenger form block ─────────────────────────────────
+function OfferSegments({ offer, label, fmt }) {
+  const segs = offer.segments || []
+  return (
+    <div className="mb-3">
+      {label && <p className="text-xs font-semibold text-brand-600 uppercase tracking-wide mb-2">{label}</p>}
+      <div className="space-y-2">
+        {segs.length > 0 ? segs.map((seg, i) => (
+          <div key={i} className="flex items-center gap-3 bg-gray-50 rounded-lg p-3 text-sm">
+            <div className="text-center w-14">
+              <p className="font-bold text-gray-900">{fmt(seg.departure_time)}</p>
+              <p className="font-mono text-xs text-gray-500">{seg.origin}</p>
+            </div>
+            <div className="flex-1 text-center">
+              <p className="text-xs text-gray-400">{seg.carrier} {seg.flight_number}</p>
+            </div>
+            <div className="text-center w-14">
+              <p className="font-bold text-gray-900">{fmt(seg.arrival_time)}</p>
+              <p className="font-mono text-xs text-gray-500">{seg.destination}</p>
+            </div>
+          </div>
+        )) : (
+          <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600">
+            {offer.carrier} {offer.flight_number} · {fmt(offer.departure_time)} → {fmt(offer.arrival_time)}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function PassengerForm({ idx, p, onChange, total }) {
   return (
     <div className="mb-5">
@@ -361,9 +368,9 @@ function Row({ label, value, bold }) {
 
 function buildInitialPassengers(form) {
   const pax = []
-  for (let i = 0; i < (Number(form.adults) || 1); i++)    pax.push(makePassenger('ADULT'))
-  for (let i = 0; i < (Number(form.children) || 0); i++)  pax.push(makePassenger('CHILD'))
-  for (let i = 0; i < (Number(form.infants) || 0); i++)   pax.push(makePassenger('INFANT'))
+  for (let i = 0; i < (Number(form.adults) || 1); i++)   pax.push(makePassenger('ADULT'))
+  for (let i = 0; i < (Number(form.children) || 0); i++) pax.push(makePassenger('CHILD'))
+  for (let i = 0; i < (Number(form.infants) || 0); i++)  pax.push(makePassenger('INFANT'))
   return pax
 }
 

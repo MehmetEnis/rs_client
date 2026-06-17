@@ -56,6 +56,6 @@ export const flightPrebook = (body) => api().post('/flights/prebook', body)
 
 export const flightBook = (body) => api().post('/flights', body)
 
-export const listFlightBookings = () => api().get('/flights/bookings')
+export const listFlightBookings = () => api().get('/flights')
 
-export const getFlightBooking = (ref) => api().get(`/flights/bookings/${ref}`)
+export const getFlightBooking = (ref) => api().get(`/flights/${ref}`)

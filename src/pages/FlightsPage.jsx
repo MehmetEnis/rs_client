@@ -23,35 +23,31 @@ const defaultForm = {
 }
 
 export default function FlightsPage() {
-  const [form,     setForm]     = useState(defaultForm)
-  const [journeys, setJourneys] = useState([])
-  const [loading,  setLoading]  = useState(false)
+  const [form,        setForm]        = useState(defaultForm)
+  const [offers,      setOffers]      = useState([])
+  const [loading,     setLoading]     = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
-  const [cursor,   setCursor]   = useState(null)
-  const [error,    setError]    = useState(null)
-  const [searched, setSearched] = useState(false)
-  const [selected, setSelected] = useState(null) // journey to book
-  const offerReqIdRef = useRef(null)
+  const [cursor,      setCursor]      = useState(null)
+  const [error,       setError]       = useState(null)
+  const [searched,    setSearched]    = useState(false)
+  const [selectedOut, setSelectedOut] = useState(null)  // chosen outbound offer (round-trip)
+  const [bookingPair, setBookingPair] = useState(null)  // triggers modal: { outbound, inbound? }
+  const orqRef = useRef(null)
 
-  const set = (field) => (val) =>
-    setForm((f) => ({ ...f, [field]: val }))
+  const set   = (field) => (val) => setForm((f) => ({ ...f, [field]: val }))
+  const setEv = (field) => (e)   => setForm((f) => ({ ...f, [field]: e.target.value }))
 
-  const setEv = (field) => (e) =>
-    setForm((f) => ({ ...f, [field]: e.target.value }))
-
-  // ── Load one page of offers ────────────────────────────
   const loadPage = async (orqId, after = null, append = false) => {
     try {
       const res = await flightOffers(orqId, after)
-      const newJourneys = res.data.data || []
-      setJourneys((prev) => append ? [...prev, ...newJourneys] : newJourneys)
+      const newOffers = res.data.data || []
+      setOffers((prev) => append ? [...prev, ...newOffers] : newOffers)
       setCursor(res.data.next_cursor || null)
     } catch (err) {
       setError(err.response?.data?.error || err.message)
     }
   }
 
-  // ── Initial search ─────────────────────────────────────
   const submit = async (e) => {
     e.preventDefault()
     if (!form.origin || !form.destination) {
@@ -60,14 +56,15 @@ export default function FlightsPage() {
     }
     setLoading(true)
     setError(null)
-    setJourneys([])
+    setOffers([])
     setCursor(null)
     setSearched(false)
+    setSelectedOut(null)
 
     try {
       const params = {
-        origin:      form.origin.iata,
-        destination: form.destination.iata,
+        origin:      form.origin.iata_code,
+        destination: form.destination.iata_code,
         depart_date: form.depart_date,
         adults:      form.adults,
         children:    form.children || 0,
@@ -78,9 +75,9 @@ export default function FlightsPage() {
         params.return_date = form.return_date
       }
 
-      const res = await flightSearch(params)
+      const res   = await flightSearch(params)
       const orqId = res.data.data.offer_request_id
-      offerReqIdRef.current = orqId
+      orqRef.current = orqId
       await loadPage(orqId, null, false)
       setSearched(true)
     } catch (err) {
@@ -91,14 +88,36 @@ export default function FlightsPage() {
   }
 
   const loadMore = async () => {
-    if (!offerReqIdRef.current || !cursor) return
+    if (!orqRef.current || !cursor) return
     setLoadingMore(true)
-    await loadPage(offerReqIdRef.current, cursor, true)
+    await loadPage(orqRef.current, cursor, true)
     setLoadingMore(false)
   }
 
-  // Only show journeys with a price (skip RT "included" return legs at this stage)
-  const displayJourneys = journeys.filter(j => j.cheapestPrice > 0)
+  const isRT = form.trip_type === 'return'
+  const outOffers = isRT ? offers.filter((o) => o.direction === 'OUTBOUND') : offers
+  const inOffers  = isRT ? offers.filter((o) => o.direction === 'INBOUND')  : []
+
+  const handleSelectOffer = (offer) => {
+    setError(null)
+    if (!isRT) {
+      setBookingPair({ outbound: offer })
+      return
+    }
+    if (offer.direction === 'OUTBOUND') {
+      setSelectedOut(offer)
+    } else {
+      if (!selectedOut) {
+        setError('Please select an outbound flight first.')
+        return
+      }
+      setBookingPair({ outbound: selectedOut, inbound: offer })
+    }
+  }
+
+  const totalFound = isRT
+    ? `${outOffers.length} outbound, ${inOffers.length} return`
+    : `${offers.length} flight${offers.length !== 1 ? 's' : ''}`
 
   return (
     <div>
@@ -106,7 +125,6 @@ export default function FlightsPage() {
       <div className="card p-6 mb-8">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Search Flights</h2>
 
-        {/* Trip type toggle */}
         <div className="flex gap-2 mb-4">
           {['return', 'one_way'].map((t) => (
             <button
@@ -177,9 +195,7 @@ export default function FlightsPage() {
 
           <div className="col-span-2 md:col-span-4 flex justify-end">
             <button type="submit" disabled={loading} className="btn-primary">
-              {loading ? (
-                <span className="flex items-center gap-2"><Spinner /> Searching…</span>
-              ) : 'Search Flights'}
+              {loading ? <span className="flex items-center gap-2"><Spinner /> Searching…</span> : 'Search Flights'}
             </button>
           </div>
         </form>
@@ -216,21 +232,78 @@ export default function FlightsPage() {
         <>
           <div className="flex items-center justify-between mb-4">
             <p className="text-sm text-gray-600">
-              {displayJourneys.length > 0
-                ? `${displayJourneys.length} flight${displayJourneys.length !== 1 ? 's' : ''} found`
-                : 'No flights found — try different dates or airports.'}
+              {offers.length > 0 ? totalFound : 'No flights found — try different dates or airports.'}
             </p>
           </div>
 
-          <div className="space-y-3">
-            {displayJourneys.map((journey, idx) => (
-              <FlightCard
-                key={journey.journeyKey || idx}
-                journey={journey}
-                onSelect={() => setSelected({ journey, form })}
-              />
-            ))}
-          </div>
+          {/* Round-trip: two sections */}
+          {isRT && (
+            <>
+              {outOffers.length > 0 && (
+                <div className="mb-8">
+                  <div className="flex items-center gap-3 mb-3">
+                    <h3 className="font-semibold text-gray-800">Outbound Flights</h3>
+                    {selectedOut
+                      ? <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Selected ✓</span>
+                      : <span className="text-xs text-gray-400">Pick your outbound flight</span>
+                    }
+                    {selectedOut && (
+                      <button
+                        className="text-xs text-brand-600 underline ml-auto"
+                        onClick={() => setSelectedOut(null)}
+                      >
+                        Change
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-3">
+                    {outOffers.map((offer, idx) => (
+                      <FlightCard
+                        key={offer.offer_id || idx}
+                        offer={offer}
+                        selected={selectedOut?.offer_id === offer.offer_id}
+                        onSelect={() => handleSelectOffer(offer)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {inOffers.length > 0 && (
+                <div className="mb-6">
+                  <div className="flex items-center gap-3 mb-3">
+                    <h3 className="font-semibold text-gray-800">Return Flights</h3>
+                    {!selectedOut && (
+                      <span className="text-xs text-amber-600">Select an outbound flight first</span>
+                    )}
+                  </div>
+                  <div className={`space-y-3 ${!selectedOut ? 'opacity-50 pointer-events-none' : ''}`}>
+                    {inOffers.map((offer, idx) => (
+                      <FlightCard
+                        key={offer.offer_id || idx}
+                        offer={offer}
+                        selected={false}
+                        onSelect={() => handleSelectOffer(offer)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* One-way: flat list */}
+          {!isRT && (
+            <div className="space-y-3">
+              {offers.map((offer, idx) => (
+                <FlightCard
+                  key={offer.offer_id || idx}
+                  offer={offer}
+                  onSelect={() => handleSelectOffer(offer)}
+                />
+              ))}
+            </div>
+          )}
 
           {cursor && (
             <div className="text-center mt-6">
@@ -247,12 +320,12 @@ export default function FlightsPage() {
       )}
 
       {/* Booking modal */}
-      {selected && (
+      {bookingPair && (
         <FlightBookingModal
-          journey={selected.journey}
-          searchForm={selected.form}
-          allJourneys={journeys}
-          onClose={() => setSelected(null)}
+          outboundOffer={bookingPair.outbound}
+          returnOffer={bookingPair.inbound || null}
+          searchForm={form}
+          onClose={() => setBookingPair(null)}
         />
       )}
     </div>
