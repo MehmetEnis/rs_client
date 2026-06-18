@@ -60,7 +60,7 @@ export default function FlightsPage() {
     } catch (err) {
       setError(err.response?.data?.error || err.message)
     }
-    setJourneys(all)
+    setJourneys(dedupJourneys(all))
     setCursor(next)
   }
 
@@ -479,6 +479,26 @@ export default function FlightsPage() {
       )}
     </div>
   )
+}
+
+// Deduplicate journeys that represent the same physical flight (same leg direction,
+// same flight numbers, same departure/arrival times). Keeps the cheapest offer.
+function dedupJourneys(journeys) {
+  const seen = new Map()
+  for (const j of journeys) {
+    const segs  = j.segments || []
+    const first = segs[0]
+    const last  = segs[segs.length - 1]
+    const nums  = segs.map(s =>
+      (s.carrier?.marketingCode ?? '') + (s.flightNumber ?? s.carrierFlightNumber ?? '')
+    ).join('|')
+    const key = [j.legDirection ?? 'OW', nums, first?.departureTime ?? '', last?.arrivalTime ?? ''].join('::')
+    const prev = seen.get(key)
+    if (!prev || Number(j.cheapestPrice ?? 0) < Number(prev.cheapestPrice ?? 0)) {
+      seen.set(key, j)
+    }
+  }
+  return [...seen.values()]
 }
 
 function Spinner() {

@@ -138,10 +138,11 @@ function ReturnOption({ journey, outbound, selected, onSelect }) {
   const rawDur  = journey.totalDuration?.iso8601 ?? journey.totalDuration
   const dur     = typeof rawDur === 'string' ? parseDuration(rawDur) : ''
 
-  // Duffel bundle: return is included in outbound price — show "incl. in total"
-  // Nuitee RT combined: journey.cheapestPrice IS the specific bundle total for this pairing
+  // Duffel RT: outbound.cheapestPrice is the bundle total (return cheapestPrice = 0)
+  // Nuitee RT combined: journey.cheapestPrice is the specific bundle total for this pairing
   // Mix & Match: journey.cheapestPrice is the independent OW return fare
   const isDuffelBundle = !!journey.duffelRtIncluded
+  const isNuiteeBundle = !!journey.nuiteeRtIncluded
   const price    = isDuffelBundle ? outbound.cheapestPrice : journey.cheapestPrice
   const currency = journey.currency || outbound.currency
 
@@ -175,10 +176,10 @@ function ReturnOption({ journey, outbound, selected, onSelect }) {
         {dur && ` · ${dur}`}
       </div>
 
-      {/* Price */}
+      {/* Price — Duffel RT: all returns share the outbound bundle total */}
       {price > 0 && (
         <div className="text-sm font-bold text-brand-600">
-          {isDuffelBundle ? 'incl. in total' : `${currency} ${Number(price).toFixed(0)}`}
+          {isDuffelBundle ? `RT total ${currency} ${Number(price).toFixed(0)}` : `${currency} ${Number(price).toFixed(0)}`}
         </div>
       )}
 
@@ -194,11 +195,11 @@ function PairedPrice({ outbound, ret }) {
   const isNuiteeBundle = ret?.nuiteeRtIncluded
   const isBundled = isDuffelBundle || isNuiteeBundle
 
+  // Duffel RT: outbound.cheapestPrice is the bundle total (return cheapestPrice = 0)
   // Nuitee RT: ret.cheapestPrice is the specific bundle total for this outbound+return pairing
-  // Duffel RT: outbound.cheapestPrice already includes the return
   // Mix & Match: sum both independent one-way fares
   const total = isNuiteeBundle
-    ? Number(ret.cheapestPrice ?? 0)
+    ? Number(ret?.cheapestPrice ?? 0)
     : isDuffelBundle
       ? Number(outbound.cheapestPrice ?? 0)
       : Number(outbound.cheapestPrice ?? 0) + Number(ret?.cheapestPrice ?? 0)
