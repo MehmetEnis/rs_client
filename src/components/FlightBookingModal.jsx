@@ -24,7 +24,6 @@ export default function FlightBookingModal({ outboundJourney, returnJourney, sea
   const [error,       setError]       = useState(null)
 
   const outOffer = outboundJourney.offers?.[0]
-  const retOffer = returnJourney?.offers?.[0]
 
   const outSegs = outboundJourney.segments || []
   const outFirst = outSegs[0]
@@ -50,8 +49,7 @@ export default function FlightBookingModal({ outboundJourney, returnJourney, sea
     setError(null)
     try {
       const body = {
-        outbound_offer_id:          outOffer?.offer_id ?? outOffer?.offerId,
-        ...(retOffer ? { return_offer_id: retOffer.offer_id ?? retOffer.offerId } : {}),
+        offer_id:                   outOffer?.offer_id ?? outOffer?.offerId,
         origin:                     outFirst?.originCode || searchForm.origin?.iata,
         destination:                outLast?.destinationCode || searchForm.destination?.iata,
         depart_date:                searchForm.depart_date,

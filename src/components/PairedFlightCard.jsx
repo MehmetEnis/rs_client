@@ -1,10 +1,20 @@
 import { useState } from 'react'
 
-export default function PairedFlightCard({ outbound, matchingReturns, onSelect }) {
-  const [expanded,       setExpanded]       = useState(false)
-  const [selectedReturn, setSelectedReturn] = useState(matchingReturns[0] ?? null)
+function retKey(ret) {
+  const segs = ret?.segments ?? []
+  const nums = segs.map(s =>
+    (s.carrier?.marketingCode ?? '') + (s.flight?.marketingNumber ?? s.flightNumber ?? '')
+  ).join('|')
+  return nums + '::' + (segs[0]?.departureTime ?? '')
+}
 
-  const defaultReturn = matchingReturns[0] ?? null
+export default function PairedFlightCard({ outbound, matchingReturns, onSelect }) {
+  const [expanded,        setExpanded]        = useState(false)
+  const [selectedRetKey,  setSelectedRetKey]  = useState(() => retKey(matchingReturns[0]))
+
+  // Derive selected return from key so it stays correct even if matchingReturns re-renders.
+  const selectedReturn = matchingReturns.find(r => retKey(r) === selectedRetKey) ?? matchingReturns[0] ?? null
+  const defaultReturn  = matchingReturns[0] ?? null
 
   const handleConfirm = () => {
     if (!selectedReturn) return
@@ -47,11 +57,11 @@ export default function PairedFlightCard({ outbound, matchingReturns, onSelect }
               }`}>
                 {matchingReturns.map((ret, idx) => (
                   <ReturnOption
-                    key={ret.journeyKey || idx}
+                    key={retKey(ret) || idx}
                     journey={ret}
                     outbound={outbound}
-                    selected={selectedReturn?.journeyKey === ret.journeyKey}
-                    onSelect={() => setSelectedReturn(ret)}
+                    selected={retKey(ret) === selectedRetKey}
+                    onSelect={() => setSelectedRetKey(retKey(ret))}
                   />
                 ))}
               </div>
@@ -79,15 +89,16 @@ function LegSummary({ journey, label, dimmed = false }) {
   const stops = segs.length - 1
 
   const fmt = (dt) =>
-    dt ? new Date(dt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '—'
+    dt ? new Date(dt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }) : '—'
   const fmtDate = (dt) =>
-    dt ? new Date(dt).toLocaleDateString([], { month: 'short', day: 'numeric' }) : ''
+    dt ? new Date(dt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''
 
-  const logo    = first?.carrier?.marketingLogo
-  const airline = first?.carrier?.marketingName || first?.carrier?.marketingCode
+  const logo     = first?.carrier?.marketingLogo
+  const airline  = first?.carrier?.marketingName || first?.carrier?.marketingCode
+  const flightNo = (first?.carrier?.marketingCode ?? '') + (first?.flight?.marketingNumber ?? '')
 
-  const rawDur = journey.totalDuration?.iso8601 ?? journey.totalDuration
-  const dur    = typeof rawDur === 'string' ? parseDuration(rawDur) : ''
+  const rawDur = journey.totalDuration
+  const dur    = rawDur ? parseDuration(String(rawDur)) : ''
 
   return (
     <div className={`flex items-center gap-3 ${dimmed ? 'opacity-60' : ''}`}>
@@ -96,12 +107,15 @@ function LegSummary({ journey, label, dimmed = false }) {
         dimmed ? 'bg-gray-100 text-gray-400' : 'bg-orange-100 text-brand-600'
       }`}>{label}</span>
 
-      {/* Logo */}
-      <div className="w-7 h-7 rounded bg-gray-100 flex items-center justify-center shrink-0 overflow-hidden">
-        {logo
-          ? <img src={logo} alt={airline} className="w-6 h-6 object-contain" />
-          : <span className="text-[10px] font-bold text-gray-400">{first?.carrier?.marketingCode}</span>
-        }
+      {/* Logo + flight number */}
+      <div className="shrink-0 flex flex-col items-center gap-0.5">
+        <div className="w-7 h-7 rounded bg-gray-100 flex items-center justify-center overflow-hidden">
+          {logo
+            ? <img src={logo} alt={airline} className="w-6 h-6 object-contain" />
+            : <span className="text-[10px] font-bold text-gray-400">{first?.carrier?.marketingCode}</span>
+          }
+        </div>
+        {flightNo && <span className="text-[9px] text-gray-400 tabular-nums leading-none">{flightNo}</span>}
       </div>
 
       {/* Times */}
@@ -113,7 +127,7 @@ function LegSummary({ journey, label, dimmed = false }) {
         <div className="flex items-center gap-1.5 text-xs text-gray-400 min-w-0 truncate">
           {dur && <span>{dur}</span>}
           <span>·</span>
-          <span>{stops === 0 ? 'Direct' : `${stops} stop${stops > 1 ? 's' : ''}`}</span>
+          <span>{stops === 0 ? 'Nonstop' : `${stops} stop${stops > 1 ? 's' : ''}`}</span>
         </div>
       </div>
 
@@ -186,29 +200,27 @@ function ReturnOption({ journey, outbound, selected, onSelect }) {
 
 function PairedPrice({ outbound, ret }) {
   const currency = outbound.currency || ret?.currency || 'GBP'
-
-  // pairedPrice = RT bundle total for this specific pairing (from pairedResults memo)
-  // isBundled = true when outbound+return share an offer_id (RT Fare mode)
-  // isBundled = false = Mix & Match (independent OW fares summed)
-  const isBundled = ret?.isBundled ?? false
-  const total = isBundled
-    ? (ret?.pairedPrice ?? Number(outbound.cheapestPrice ?? 0))
-    : Number(outbound.cheapestPrice ?? 0) + Number(ret?.cheapestPrice ?? 0)
+  const total    = ret?.pairedPrice ?? Number(outbound.cheapestPrice ?? 0)
 
   return (
-    <div>
-      <p className="text-xs text-gray-400 mb-0.5">{isBundled ? 'return total' : 'est. total'}</p>
+    <div className="text-right">
+      <p className="text-xs text-gray-400 mb-0.5">return total from</p>
       <p className="text-lg font-bold text-gray-900 tabular-nums">
         {currency} {total.toFixed(0)}
       </p>
+      <p className="text-[10px] text-green-600 font-medium">return included</p>
     </div>
   )
 }
 
-function parseDuration(iso) {
-  const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?/)
-  if (!m) return iso
-  const h = parseInt(m[1] || 0)
-  const mins = parseInt(m[2] || 0)
-  return mins > 0 ? `${h}h ${mins}m` : `${h}h`
+function parseDuration(raw) {
+  if (!raw) return ''
+  const iso = raw.match(/^PT(?:(\d+)H)?(?:(\d+)M)?$/)
+  if (iso) {
+    const h = parseInt(iso[1] || 0)
+    const m = parseInt(iso[2] || 0)
+    return m > 0 ? `${h}h ${m}m` : `${h}h`
+  }
+  return raw
 }
+
