@@ -8,30 +8,30 @@ export default function FareSelector({ outboundJourney, inboundJourney, onConfir
   const inOffers  = inboundJourney?.offers  || []
   const isRT      = !!inboundJourney
 
-  // Nuitee RT combined: the outbound offer already covers both legs — the same offer object
-  // appears on both journeys so there's nothing separate to pick for the return.
-  const isNuiteeRtCombined = outOffers.some(o => o.nuiteeRtCombined)
+  // Unified API: RT combined bundles share the same offer_id on both outbound and inbound.
+  // Filter outbound offers to only those that also appear on the selected inbound journey.
+  const inboundOfferIds = new Set(inOffers.map(o => o.offer_id).filter(Boolean))
+  const pairedOffers    = outOffers.filter(o => inboundOfferIds.has(o.offer_id))
+  const isRtCombined    = isRT && pairedOffers.length > 0
 
-  // Duffel RT bundles: return leg is included in the outbound offer price.
-  const isDuffelBundle = inboundJourney?.duffelRtIncluded || inboundJourney?.nuiteeRtIncluded
-
-  // Only need a separate inbound fare selection when it's a true OW-pair round-trip
-  const needSeparateInboundFare = isRT && !isNuiteeRtCombined && !isDuffelBundle
+  // For RT combined: show only paired offers (one offer covers both legs).
+  // For OW or Mix & Match: show all outbound offers.
+  const displayOutOffers       = isRtCombined ? pairedOffers : outOffers
+  const needSeparateInboundFare = isRT && !isRtCombined
 
   const canConfirm = outOffer && (!needSeparateInboundFare || inOffer)
 
   const handleConfirm = () => {
-    const withOffer = (journey, selected) => ({
+    const withOffer = (journey, offer) => ({
       ...journey,
-      offers: [selected, ...journey.offers.filter((o) => o !== selected)],
+      offers: [offer, ...(journey.offers ?? []).filter(o => o !== offer)],
     })
     const outJ = withOffer(outboundJourney, outOffer)
-    // For bundled fares the inbound journey keeps its data but we put the same outbound
-    // offer at index 0 so the booking modal's retOffer picks up the correct offer ID.
     const inJ  = isRT
-      ? (isNuiteeRtCombined || isDuffelBundle
-          ? withOffer(inboundJourney, outOffer)
-          : withOffer(inboundJourney, inOffer))
+      ? isRtCombined
+        // Same offer_id covers both legs — find the inbound's copy of it
+        ? withOffer(inboundJourney, inOffers.find(o => o.offer_id === outOffer.offer_id) ?? outOffer)
+        : withOffer(inboundJourney, inOffer)
       : null
     onConfirm(outJ, inJ)
   }
@@ -40,7 +40,7 @@ export default function FareSelector({ outboundJourney, inboundJourney, onConfir
     <div className="card p-6">
       <h3 className="text-lg font-semibold text-gray-900 mb-1">Choose your fare</h3>
       <p className="text-sm text-gray-500 mb-6">
-        {isNuiteeRtCombined
+        {isRtCombined
           ? 'This is a bundled return fare — one price covers both legs.'
           : `Select a fare type for ${isRT ? 'each leg' : 'your flight'}.`}
       </p>
@@ -48,13 +48,13 @@ export default function FareSelector({ outboundJourney, inboundJourney, onConfir
       <LegFares
         label={isRT ? 'Outbound' : null}
         segs={outboundJourney.segments || []}
-        offers={outOffers}
+        offers={displayOutOffers}
         selected={outOffer}
         currency={outboundJourney.currency}
         onSelect={setOutOffer}
       />
 
-      {isRT && isNuiteeRtCombined && (
+      {isRT && isRtCombined && (
         <div className="mb-8 p-4 rounded-xl bg-green-50 border border-green-200 text-sm text-green-700">
           Return included · {inboundJourney.segments?.[0]?.originCode} →{' '}
           {inboundJourney.segments?.[inboundJourney.segments.length - 1]?.destinationCode} ·
@@ -120,7 +120,7 @@ function LegFares({ label, segs, offers, selected, currency, onSelect }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {offers.map((offer, idx) => (
             <FareCard
-              key={offer.offerId || idx}
+              key={offer.offer_id || offer.offerId || idx}
               offer={offer}
               currency={currency}
               selected={selected === offer}

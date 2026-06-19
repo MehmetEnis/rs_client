@@ -132,12 +132,7 @@ export default function FlightsPage() {
   const inJourneys  = isRT ? journeys.filter(j => j.legDirection === 'INBOUND').filter(directPass) : []
 
   // Paired results for RT Fare mode.
-  // Computed directly from journeys so deps are stable (avoids re-running on every render
-  // because outJourneys/inJourneys are new array refs each render).
-  // For each outbound: collect ALL return keys from ALL offers (not just the first).
-  // Duffel: match via duffelReturnKey → inbound.routingKey or inbound.journeyKey
-  // Nuitee RT combined: match via nuiteeReturnKey → inbound.routingKey
-  // Nuitee OW: fallback to all non-bundled inbound sorted by price
+  // Computed from journeys directly (stable deps vs. outJourneys/inJourneys refs).
   const pairedResults = useMemo(() => {
     if (!isRT || !journeys.length) return []
 
@@ -147,19 +142,24 @@ export default function FlightsPage() {
     if (!ins.length) return []
 
     const getMatchingReturns = (journey) => {
-      const allReturnKeys = [...new Set([
-        ...(journey.offers ?? []).map(o => o.duffelReturnKey ?? o.nuiteeReturnKey).filter(Boolean),
-        ...(journey.duffelReturnKey ? [journey.duffelReturnKey] : []),
-      ])]
-
-      if (allReturnKeys.length) {
-        return ins.filter(r => allReturnKeys.includes(r.routingKey ?? r.journeyKey))
+      // New unified API: pairing is via shared offer_id.
+      // The outbound offer's pricing.display.total = RT bundle price for that specific pairing.
+      const outOfferPriceMap = {}
+      for (const o of (journey.offers ?? [])) {
+        if (o.offer_id) outOfferPriceMap[o.offer_id] = o.pricing?.display?.total ?? 0
       }
 
-      // OW fallback: all non-bundled inbound, cheapest first
+      // RT Fare mode: only pair via shared offer_id. No fallback — outbounds with no
+      // matching inbound are filtered out by the caller (.filter(p => p.matchingReturns.length > 0)).
       return ins
-        .filter(j => !j.duffelRtIncluded && !j.nuiteeRtIncluded)
-        .sort((a, b) => Number(a.cheapestPrice ?? 0) - Number(b.cheapestPrice ?? 0))
+        .map(ret => {
+          const sharedIds = (ret.offers ?? []).map(o => o.offer_id).filter(id => id && outOfferPriceMap[id] !== undefined)
+          if (!sharedIds.length) return null
+          const pairedPrice = Math.min(...sharedIds.map(id => outOfferPriceMap[id]))
+          return { ...ret, pairedPrice, isBundled: true }
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.pairedPrice - b.pairedPrice)
     }
 
     return out
@@ -481,24 +481,27 @@ export default function FlightsPage() {
   )
 }
 
-// Deduplicate journeys that represent the same physical flight (same leg direction,
-// same flight numbers, same departure/arrival times). Keeps the cheapest offer.
+// Deduplicate outbound journeys that represent the same physical flight, keeping the cheapest.
+// Inbound journeys are never deduped — every routingKey must survive or RT pairing breaks.
 function dedupJourneys(journeys) {
+  const inbound  = journeys.filter(j => j.legDirection === 'INBOUND')
+  const outbound = journeys.filter(j => j.legDirection !== 'INBOUND')
+
   const seen = new Map()
-  for (const j of journeys) {
+  for (const j of outbound) {
     const segs  = j.segments || []
     const first = segs[0]
     const last  = segs[segs.length - 1]
     const nums  = segs.map(s =>
-      (s.carrier?.marketingCode ?? '') + (s.flightNumber ?? s.carrierFlightNumber ?? '')
+      (s.carrier?.marketingCode ?? '') + (s.flight?.marketingNumber ?? s.flightNumber ?? s.carrierFlightNumber ?? '')
     ).join('|')
-    const key = [j.legDirection ?? 'OW', nums, first?.departureTime ?? '', last?.arrivalTime ?? ''].join('::')
+    const key = [nums, first?.departureTime ?? '', last?.arrivalTime ?? ''].join('::')
     const prev = seen.get(key)
     if (!prev || Number(j.cheapestPrice ?? 0) < Number(prev.cheapestPrice ?? 0)) {
       seen.set(key, j)
     }
   }
-  return [...seen.values()]
+  return [...seen.values(), ...inbound]
 }
 
 function Spinner() {

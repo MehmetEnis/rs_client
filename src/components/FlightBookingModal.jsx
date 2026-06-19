@@ -50,9 +50,8 @@ export default function FlightBookingModal({ outboundJourney, returnJourney, sea
     setError(null)
     try {
       const body = {
-        outbound_offer_id:          outOffer?.offerId,
-        ...(retOffer ? { return_offer_id: retOffer.offerId } : {}),
-        supplier:                   outboundJourney.supplier,
+        outbound_offer_id:          outOffer?.offer_id ?? outOffer?.offerId,
+        ...(retOffer ? { return_offer_id: retOffer.offer_id ?? retOffer.offerId } : {}),
         origin:                     outFirst?.originCode || searchForm.origin?.iata,
         destination:                outLast?.destinationCode || searchForm.destination?.iata,
         depart_date:                searchForm.depart_date,
